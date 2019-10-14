@@ -1,0 +1,968 @@
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 1   
+
+
+C51 COMPILER V9.59.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\main
+                    -.lst) TABS(2) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          /*******************说明:**************************
+   2          智能睡眠枕代码 18数据科学孙易泽
+   3          **************************************************/
+   4          
+   5          #include <reg52.h>
+   6          #include <intrins.h>
+   7          #define uchar unsigned char
+   8          #define uint  unsigned int
+   9          uchar x,y,z,n,m,a=0;
+  10          //压力传感器变量
+  11          uint num=0x1F;
+  12          uint c=0x1F;
+  13          uint b,d;
+  14          //睡眠记录数组
+  15          uint e,f,g,h;
+  16          uint deep=0;
+  17          uchar condition[60]={0};
+  18          //闹钟时间变量设置
+  19          int time_hour_1=0;
+  20          int time_hour_2=7;
+  21          int time_min_1=5;
+  22          int time_min_2=0;
+  23          //蜂鸣器延时变量
+  24          uint time;
+  25          //LCD1602引脚定义
+  26          sbit RS=P3^5;
+  27          sbit RW=P3^6;
+  28          sbit CS=P3^7;
+  29          #define LCDDATA P0
+  30          //DS1302引脚定义
+  31          sbit RST=P1^5;
+  32          sbit IO=P1^6;
+  33          sbit SCK=P1^7;
+  34          //4个独立按键的引脚定义
+  35          sbit key1=P2^7;
+  36          sbit key2=P2^6;
+  37          sbit key3=P2^5;
+  38          sbit key4=P2^4;
+  39          //蜂鸣器引脚定义
+  40          sbit buzz=P2^0;
+  41          //压力传感器（fsr）引脚定义
+  42          sbit f1=P1^0;
+  43          sbit f2=P1^1;
+  44          sbit f3=P1^2;
+  45          sbit f4=P1^3;
+  46          sbit f5=P1^4;
+  47          //DS1302地址定义
+  48          #define ds1302_sec_add      0x80    //秒数据地址
+  49          #define ds1302_min_add      0x82    //分数据地址
+  50          #define ds1302_hr_add     0x84    //时数据地址
+  51          #define ds1302_date_add     0x86    //日数据地址
+  52          #define ds1302_month_add    0x88    //月数据地址
+  53          #define ds1302_day_add      0x8a    //星期数据地址
+  54          #define ds1302_year_add     0x8c    //年数据地址
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 2   
+
+  55          #define ds1302_control_add    0x8e    //控制数据地址
+  56          #define ds1302_charger_add    0x90           
+  57          #define ds1302_clkburst_add   0xbe
+  58          //时间数组定义
+  59          uchar time_buf[8] = {0};
+  60          uchar dis_time_buf[16]={0};
+  61          
+  62          /*****************
+  63          延时函数
+  64          *****************/
+  65          
+  66          //1ms延时
+  67          void Delay_xms(uint x)
+  68          {
+  69   1        uint i,j;
+  70   1        for(i=0;i<x;i++)
+  71   1          for(j=0;j<112;j++);
+  72   1      }
+  73          //12us延时
+  74          void Delay_xus(uint t)            
+  75          { 
+  76   1        for(;t>0;t--)
+  77   1         {
+  78   2         _nop_();
+  79   2         }
+  80   1      }
+  81          
+  82          /*****************
+  83          LCD设置
+  84          *****************/
+  85          
+  86          //控制LCD写时序
+  87          void LCD_en_write(void)       
+  88          {
+  89   1         CS=1;    
+  90   1          Delay_xus(20);
+  91   1         CS=0;   
+  92   1        Delay_xus(20);
+  93   1      } 
+  94          //写指令函数
+  95          void Write_Instruction(uchar command)
+  96          {
+  97   1        RS=0;
+  98   1        RW=0;
+  99   1        CS=1;
+ 100   1        LCDDATA=command;
+ 101   1        LCD_en_write();//写入指令数据
+ 102   1      }
+ 103          //写数据函数
+ 104          void Write_Data(uchar Wdata)
+ 105          {
+ 106   1        RS=1;
+ 107   1        RW=0;
+ 108   1        CS=1;
+ 109   1        LCDDATA=Wdata;
+ 110   1        LCD_en_write();//写入数据
+ 111   1      }
+ 112          //字符显示初始地址设置
+ 113          void LCD_SET_XY(uchar X,uchar Y)
+ 114          {
+ 115   1        uchar address;
+ 116   1        if(Y==0)
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 3   
+
+ 117   1          address=0x80+X;//Y=0,表示在第一行显示，地址基数为0x80
+ 118   1        else 
+ 119   1          address=0xc0+X;//Y非0时，表时在第二行显示，地址基数为0xC0
+ 120   1        Write_Instruction(address);//写指令，设置显示初始地址
+ 121   1      }
+ 122          //在第X行Y列开始显示Wdata所对应的单个字符
+ 123          void LCD_write_char(uchar X,uchar Y,uchar Wdata)
+ 124          {
+ 125   1        LCD_SET_XY(X,Y);//写地址
+ 126   1        Write_Data(Wdata);//写入当前字符并显示
+ 127   1      }
+ 128          //LCD清屏函数
+ 129          void LCD_clear(void)
+ 130          {
+ 131   1        Write_Instruction(0x01);
+ 132   1        Delay_xms(5);
+ 133   1      }
+ 134          //显示屏初始化函数
+ 135          void LCD_init(void) 
+ 136          { 
+ 137   1        Write_Instruction(0x38);
+ 138   1        Delay_xms(5);
+ 139   1        Write_Instruction(0x38);  
+ 140   1        Delay_xms(5);
+ 141   1        Write_Instruction(0x38);  
+ 142   1      
+ 143   1        Write_Instruction(0x08);  //关显示，不显光标，光标不闪烁
+ 144   1        Write_Instruction(0x01);  //清屏
+ 145   1        Delay_xms(5);
+ 146   1        
+ 147   1        Write_Instruction(0x04);  //写一字符，整屏显示不移动
+ 148   1        Delay_xms(5);
+ 149   1        Write_Instruction(0x0C);  //开显示，光标、闪烁都关闭
+ 150   1      }
+ 151          //闹钟设置界面时的十位
+ 152          void LCD_hour_write_1(void)
+ 153          {
+ 154   1        if(time_hour_1<0)
+ 155   1        {
+ 156   2          time_hour_1+=3;
+ 157   2        }
+ 158   1        if(0<=time_hour_1<3)
+ 159   1        {
+ 160   2          LCD_write_char(11,1,time_hour_1+'0');
+ 161   2        }
+ 162   1        if(time_hour_1>=3)
+ 163   1        {
+ 164   2          time_hour_1-=3;
+ 165   2          LCD_write_char(11,1,'0');
+ 166   2        }
+ 167   1      }
+ 168          //闹钟设置界面时的个位
+ 169          void LCD_hour_write_2(void)
+ 170          {
+ 171   1        if(time_hour_2<0)
+ 172   1        {
+ 173   2          if(time_hour_1==0)
+ 174   2          {
+ 175   3            time_hour_1=2;
+ 176   3            time_hour_2=3;
+ 177   3          }
+ 178   2          else
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 4   
+
+ 179   2          { 
+ 180   3            time_hour_2+=10;
+ 181   3            time_hour_1--;
+ 182   3          }
+ 183   2        }
+ 184   1        if(0<=time_hour_2<10)
+ 185   1        {
+ 186   2          if(time_hour_1==2)
+ 187   2          {
+ 188   3            if(time_hour_2==4)
+ 189   3            {
+ 190   4              time_hour_1=0;
+ 191   4              time_hour_2=0;
+ 192   4              LCD_write_char(12,1,time_hour_2+'0');
+ 193   4            }
+ 194   3            else
+ 195   3            {
+ 196   4              LCD_write_char(12,1,time_hour_2+'0');
+ 197   4            }
+ 198   3          }
+ 199   2          else
+ 200   2          {
+ 201   3            LCD_write_char(12,1,time_hour_2+'0');
+ 202   3          }
+ 203   2        }
+ 204   1        if(time_hour_2>=10)
+ 205   1        {
+ 206   2          time_hour_2-=10;
+ 207   2          time_hour_1++;
+ 208   2          LCD_write_char(12,1,'0');
+ 209   2        }
+ 210   1      }
+ 211          
+ 212          //闹钟设置界面分钟的十位
+ 213          void LCD_min_write_1(void)
+ 214          {
+ 215   1        if(time_min_1<0)
+ 216   1        {
+ 217   2          time_min_1+=6;
+ 218   2        }
+ 219   1        if(0<=time_min_1<6)
+ 220   1        {
+ 221   2          LCD_write_char(14,1,time_min_1+'0');
+ 222   2        }
+ 223   1        if(time_min_1>=6)
+ 224   1        {
+ 225   2          time_min_1-=6;
+ 226   2          LCD_write_char(14,1,'0');
+ 227   2        }
+ 228   1      }
+ 229          //闹钟设置界面分钟的个位
+ 230          void LCD_min_write_2(void)
+ 231          {
+ 232   1        if(time_min_2<0)
+ 233   1        {
+ 234   2          time_min_2+=10;
+ 235   2        }
+ 236   1        if(0<=time_min_2<10)
+ 237   1        {
+ 238   2          LCD_write_char(15,1,time_min_2+'0');
+ 239   2        }
+ 240   1        if(time_min_2>=10)
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 5   
+
+ 241   1        {
+ 242   2          time_min_2-=10;
+ 243   2          LCD_write_char(15,1,'0');
+ 244   2        }
+ 245   1      }
+ 246          
+ 247          /************************
+ 248          DS1302时钟模块设置代码
+ 249          ************************/
+ 250          
+ 251          //DS1302初始化函数
+ 252          void ds1302_init(void) 
+ 253          {
+ 254   1        RST=0;      //RST脚置低
+ 255   1        SCK=0;      //SCK脚置低
+ 256   1      }
+ 257          //从DS1302读出一字节数据
+ 258          uchar ds1302_read_byte(uchar addr) {
+ 259   1      
+ 260   1        uchar i,temp; 
+ 261   1        RST=1;          //启动DS1302总线
+ 262   1        //写入目标地址：addr
+ 263   1        addr = addr | 0x01;    //最低位置高，寄存器0位为0时写，为1时读
+ 264   1        for (i = 0; i < 8; i ++) {
+ 265   2          if (addr & 0x01) {
+ 266   3            IO=1;
+ 267   3            }
+ 268   2          else {
+ 269   3            IO=0;
+ 270   3            }
+ 271   2          SCK=1;
+ 272   2          SCK=0;
+ 273   2          addr = addr >> 1;
+ 274   2          } 
+ 275   1        //输出数据：temp
+ 276   1        for (i = 0; i < 8; i ++) {
+ 277   2          temp = temp >> 1;
+ 278   2          if (IO) {
+ 279   3            temp |= 0x80;
+ 280   3            }
+ 281   2          else {
+ 282   3            temp &= 0x7F;
+ 283   3            }
+ 284   2          SCK=1;
+ 285   2          SCK=0;
+ 286   2          } 
+ 287   1        RST=0;          //停止DS1302总线
+ 288   1        return temp;
+ 289   1      }
+ 290          
+ 291          //从DS302读出时钟数据
+ 292          void ds1302_read_time(void)  
+ 293          {
+ 294   1        time_buf[1]=ds1302_read_byte(ds1302_year_add);    //年 
+ 295   1        time_buf[2]=ds1302_read_byte(ds1302_month_add);   //月 
+ 296   1        time_buf[3]=ds1302_read_byte(ds1302_date_add);    //日 
+ 297   1        time_buf[4]=ds1302_read_byte(ds1302_hr_add);    //时 
+ 298   1        time_buf[5]=ds1302_read_byte(ds1302_min_add);   //分 
+ 299   1        time_buf[6]=(ds1302_read_byte(ds1302_sec_add))&0x7f;//秒，屏蔽秒的第7位，避免超出59
+ 300   1        time_buf[7]=ds1302_read_byte(ds1302_day_add);   //周  
+ 301   1      }
+ 302          
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 6   
+
+ 303          /************************
+ 304          独立按键代码
+ 305          ************************/
+ 306          //独立按键初始化
+ 307          void scanstart(void)
+ 308          {
+ 309   1        key1=1;
+ 310   1        key2=1;
+ 311   1        key3=1;
+ 312   1        key4=1;
+ 313   1      }
+ 314          //按键扫描
+ 315          void scan(void)
+ 316          {
+ 317   1        if(key1==0||key2==0||key3==0||key4==0)
+ 318   1        {
+ 319   2          Delay_xms(10);
+ 320   2          if(key1==0||key2==0||key3==0||key4==0)
+ 321   2          {
+ 322   3            if(key1==0)
+ 323   3            {
+ 324   4              x=1;
+ 325   4            }
+ 326   3            if(key2==0)
+ 327   3            {
+ 328   4              y=1;
+ 329   4            }
+ 330   3            if(key3==0)
+ 331   3            {
+ 332   4              z=1;
+ 333   4            }
+ 334   3            if(key4==0)
+ 335   3            {
+ 336   4              n=1;
+ 337   4            }
+ 338   3          }
+ 339   2        }
+ 340   1      }
+ 341          
+ 342          /*********************
+ 343          fsr压力传感器
+ 344          *********************/
+ 345          
+ 346          //压力传感器检测扫描
+ 347          void fsr()
+ 348          {
+ 349   1        b=P1&num;
+ 350   1        if(b!=c)
+ 351   1        {
+ 352   2          c=b;
+ 353   2          d++;
+ 354   2        }
+ 355   1      }
+ 356          
+ 357          /*********************
+ 358          LCD显示界面
+ 359          *********************/
+ 360          //默认显示界面
+ 361          void Display1(void)
+ 362          {
+ 363   1         
+ 364   1         LCD_write_char(1,0,dis_time_buf[4]+'0');
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 7   
+
+ 365   1         LCD_write_char(2,0,dis_time_buf[5]+'0');
+ 366   1         LCD_write_char(3,0,'/');
+ 367   1         LCD_write_char(4,0,dis_time_buf[6]+'0');
+ 368   1         LCD_write_char(5,0,dis_time_buf[7]+'0');
+ 369   1         LCD_write_char(7,0,dis_time_buf[8]+'0');
+ 370   1         LCD_write_char(8,0,dis_time_buf[9]+'0');
+ 371   1         LCD_write_char(9,0,':');
+ 372   1         LCD_write_char(10,0,dis_time_buf[10]+'0');
+ 373   1         LCD_write_char(11,0,dis_time_buf[11]+'0');
+ 374   1         LCD_write_char(12,0,':');
+ 375   1         LCD_write_char(13,0,dis_time_buf[12]+'0');
+ 376   1         LCD_write_char(14,0,dis_time_buf[13]+'0');
+ 377   1         //第2行显示  
+ 378   1         LCD_write_char(0,1,'a');
+ 379   1         LCD_write_char(1,1,'l');
+ 380   1         LCD_write_char(2,1,'a');
+ 381   1         LCD_write_char(3,1,'r');
+ 382   1         LCD_write_char(4,1,'m');
+ 383   1         LCD_write_char(5,1,'|');
+ 384   1         LCD_write_char(10,1,'|');
+ 385   1         LCD_write_char(11,1,'s');
+ 386   1         LCD_write_char(12,1,'t');
+ 387   1         LCD_write_char(13,1,'a');
+ 388   1         LCD_write_char(14,1,'r');
+ 389   1         LCD_write_char(15,1,'t');
+ 390   1      }
+ 391          //闹钟设置界面
+ 392          void Display2(void)
+ 393          {
+ 394   1        LCD_write_char(0,0,'s');
+ 395   1        LCD_write_char(1,0,'e');
+ 396   1        LCD_write_char(2,0,'t');
+ 397   1        LCD_write_char(3,0,'t');
+ 398   1        LCD_write_char(4,0,'i');
+ 399   1        LCD_write_char(5,0,'n');
+ 400   1        LCD_write_char(6,0,'g');
+ 401   1        LCD_write_char(8,0,'a');
+ 402   1        LCD_write_char(9,0,'l');
+ 403   1        LCD_write_char(10,0,'a');
+ 404   1        LCD_write_char(11,0,'r');
+ 405   1        LCD_write_char(12,0,'m');
+ 406   1        LCD_write_char(13,0,':');
+ 407   1        LCD_write_char(13,1,':');
+ 408   1      
+ 409   1        LCD_hour_write_2();
+ 410   1        LCD_hour_write_1(); //小时的显示
+ 411   1        LCD_min_write_1(); //分的十位显示
+ 412   1        LCD_min_write_2(); //分的个位显示
+ 413   1        
+ 414   1      }
+ 415          //睡眠界面
+ 416          void Display3(void)
+ 417          {
+ 418   1        LCD_write_char(3,0,'g');
+ 419   1        LCD_write_char(4,0,'o');
+ 420   1        LCD_write_char(5,0,'o');
+ 421   1        LCD_write_char(6,0,'d');
+ 422   1        LCD_write_char(8,0,'n');
+ 423   1        LCD_write_char(9,0,'i');
+ 424   1        LCD_write_char(10,0,'g');
+ 425   1        LCD_write_char(11,0,'h');
+ 426   1        LCD_write_char(12,0,'t');
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 8   
+
+ 427   1        LCD_write_char(13,0,'!');
+ 428   1        
+ 429   1        LCD_write_char(11,1,'|');
+ 430   1        LCD_write_char(12,1,'s');
+ 431   1        LCD_write_char(13,1,'t');
+ 432   1        LCD_write_char(14,1,'o');
+ 433   1        LCD_write_char(15,1,'p');
+ 434   1      
+ 435   1      }
+ 436          //闹钟叫醒界面
+ 437          void Display4(void)
+ 438          {
+ 439   1        LCD_write_char(2,0,'g');
+ 440   1        LCD_write_char(3,0,'o');
+ 441   1        LCD_write_char(4,0,'o');
+ 442   1        LCD_write_char(5,0,'d');
+ 443   1        LCD_write_char(7,0,'m');
+ 444   1        LCD_write_char(8,0,'o');
+ 445   1        LCD_write_char(9,0,'r');
+ 446   1        LCD_write_char(10,0,'n');
+ 447   1        LCD_write_char(11,0,'i');
+ 448   1        LCD_write_char(12,0,'n');
+ 449   1        LCD_write_char(13,0,'g');
+ 450   1        LCD_write_char(14,0,'!');
+ 451   1        
+ 452   1        LCD_write_char(11,1,'|');
+ 453   1        LCD_write_char(12,1,'s');
+ 454   1        LCD_write_char(13,1,'t');
+ 455   1        LCD_write_char(14,1,'o');
+ 456   1        LCD_write_char(15,1,'p');
+ 457   1      }
+ 458          //睡眠状况查看界面
+ 459          void Display5(void)
+ 460          {
+ 461   1        LCD_write_char(0,0,'s');
+ 462   1        LCD_write_char(1,0,'l');
+ 463   1        LCD_write_char(2,0,'e');
+ 464   1        LCD_write_char(3,0,'e');
+ 465   1        LCD_write_char(4,0,'p');
+ 466   1        LCD_write_char(6,0,'h');
+ 467   1        LCD_write_char(7,0,'o');
+ 468   1        LCD_write_char(8,0,'u');
+ 469   1        LCD_write_char(9,0,'r');
+ 470   1        LCD_write_char(10,0,':');
+ 471   1        LCD_write_char(11,0,f/60+'0');
+ 472   1        LCD_write_char(12,0,f/6+'0');
+ 473   1        LCD_write_char(13,0,':');
+ 474   1        LCD_write_char(14,0,f%6+'0');
+ 475   1        LCD_write_char(15,0,'0');
+ 476   1        
+ 477   1        LCD_write_char(0,1,'d');
+ 478   1        LCD_write_char(1,1,'e');
+ 479   1        LCD_write_char(2,1,'e');
+ 480   1        LCD_write_char(3,1,'p');
+ 481   1        LCD_write_char(4,1,':');
+ 482   1        LCD_write_char(5,1,deep/60+'0');
+ 483   1        LCD_write_char(6,1,deep/6+'0');
+ 484   1        LCD_write_char(7,1,':');
+ 485   1        LCD_write_char(8,1,deep%6+'0');
+ 486   1        LCD_write_char(9,1,'0');
+ 487   1      }
+ 488          //蓝牙发送界面
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 9   
+
+ 489          void Display6(void)
+ 490          {
+ 491   1        LCD_write_char(2,0,'s');
+ 492   1        LCD_write_char(3,0,'e');
+ 493   1        LCD_write_char(4,0,'n');
+ 494   1        LCD_write_char(5,0,'d');
+ 495   1        LCD_write_char(7,0,'m');
+ 496   1        LCD_write_char(8,0,'e');
+ 497   1        LCD_write_char(9,0,'s');
+ 498   1        LCD_write_char(10,0,'s');
+ 499   1        LCD_write_char(11,0,'a');
+ 500   1        LCD_write_char(12,0,'g');
+ 501   1        LCD_write_char(13,0,'e');
+ 502   1      }
+ 503          //蓝牙发送成功界面
+ 504          void Display7(void)
+ 505          { 
+ 506   1        LCD_write_char(9,1,'s');
+ 507   1        LCD_write_char(10,1,'u');
+ 508   1        LCD_write_char(11,1,'c');
+ 509   1        LCD_write_char(12,1,'c');
+ 510   1        LCD_write_char(13,1,'e');
+ 511   1        LCD_write_char(14,1,'s');
+ 512   1        LCD_write_char(15,1,'s');
+ 513   1      }
+ 514          
+ 515          
+ 516          /****************
+ 517          蜂鸣器代码
+ 518          ****************/
+ 519          void buzzer()
+ 520          {
+ 521   1           for(time=0;time<10000;time++);
+ 522   1           buzz=1;
+ 523   1           for(time=0;time<10000;time++);
+ 524   1           buzz=0;
+ 525   1           for(time=0;time<10000;time++);
+ 526   1           buzz=1;
+ 527   1           for(time=0;time<10000;time++);
+ 528   1           buzz=0;
+ 529   1           for(time=0;time<10000;time++);
+ 530   1           buzz=1;
+ 531   1           for(time=0;time<10000;time++);
+ 532   1           buzz=0;
+ 533   1           for(time=0;time<10000;time++);
+ 534   1           buzz=1;
+ 535   1           for(time=0;time<10000;time++);
+ 536   1           buzz=0;
+ 537   1           for(time=0;time<10000;time++);
+ 538   1           buzz=1;
+ 539   1           for(time=0;time<10000;time++);
+ 540   1      } 
+ 541          /******************
+ 542          蓝牙函数
+ 543          ******************/
+ 544          //蓝牙数据发送函数
+ 545          void sendDate(char date)
+ 546          {
+ 547   1          SBUF=date;      //接收到的数据放入发送缓存器发送
+ 548   1          while(!TI);       //等待发送数据完成
+ 549   1          TI=0;       //清除发送完成标志位
+ 550   1      }
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 10  
+
+ 551          
+ 552          /******************
+ 553          定时器和中断
+ 554          ******************/
+ 555          //定时器0初始化
+ 556          void Init_timer0()
+ 557          {
+ 558   1        TMOD|=0X01;//选择为定时器0模式，工作方式1，仅用TR0打开启动。
+ 559   1        TH0=0X00; //给定时器赋初值，定时1ms
+ 560   1        TL0=0X00; 
+ 561   1        TR0=1;//打开定时器  
+ 562   1        ET0=1;//打开定时器0中断允许
+ 563   1        EA=1;//打开总中断
+ 564   1      }
+ 565          //定时器1初始化
+ 566          void Init_timer1()  
+ 567          {
+ 568   1          TMOD=0x20;      //设置计数器1的工作方式2
+ 569   1          TH1=0xfd;     //设置计数器1的初值，决定波特率
+ 570   1          TL1=0xfd;   //设置计数器1的初值，决定波特率
+ 571   1          PCON=0x00;      // 波特率倍增0x00不加倍  0x80加倍
+ 572   1          SCON=0x50;    //设置工作方式1 开启接受允许
+ 573   1          EA=1;       //开启总中断
+ 574   1          ES=1;     //开启串口接受中断
+ 575   1          TR1=1;      //计数器1开始运行
+ 576   1      }
+ 577          //定时器2初始化
+ 578          void Init_timer2(void)
+ 579          {
+ 580   1       RCAP2H=0x3c;//赋T2初始值0x3cb0，溢出20次为1秒,每次溢出时间为50ms
+ 581   1       RCAP2L=0xb0;
+ 582   1       TR2=1;      //启动定时器2
+ 583   1       ET2=1;    //打开定时器2中断
+ 584   1       EA=1;     //打开总中断
+ 585   1      }
+ 586          //定时器0中断函数
+ 587          void Timer0() interrupt 1
+ 588          {
+ 589   1        TH0=0X00; //给定时器赋初值，定时1ms
+ 590   1        TL0=0X00;
+ 591   1        if(g==1)
+ 592   1        {
+ 593   2          e++;
+ 594   2          if(e==8435)
+ 595   2          {
+ 596   3            if(d<4)
+ 597   3            {
+ 598   4              deep++;
+ 599   4            }
+ 600   3            e=0;
+ 601   3            condition[f]=d;
+ 602   3            f++;
+ 603   3            d=0;
+ 604   3          }
+ 605   2        }
+ 606   1      
+ 607   1      } 
+ 608          //蓝牙中断
+ 609          void Uart() interrupt 4
+ 610          {
+ 611   1          uchar date;
+ 612   1          date=SBUF;        //取出接受到的数据
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 11  
+
+ 613   1          RI=0;       //清除接受中断标志位
+ 614   1      }
+ 615          
+ 616          //定时器2中断函数
+ 617          void Timer2() interrupt 5   //定时器2是5号中断
+ 618          {
+ 619   1       static uchar t;
+ 620   1       TF2=0;
+ 621   1       t++;
+ 622   1       if(t==4)               //间隔200ms(50ms*4)读取一次时间
+ 623   1        {
+ 624   2         t=0;
+ 625   2         ds1302_read_time();  //读取时间 
+ 626   2         dis_time_buf[0]=(time_buf[0]>>4); //年   
+ 627   2         dis_time_buf[1]=(time_buf[0]&0x0f);
+ 628   2         
+ 629   2         dis_time_buf[2]=(time_buf[1]>>4);   
+ 630   2         dis_time_buf[3]=(time_buf[1]&0x0f);
+ 631   2        
+ 632   2         dis_time_buf[4]=(time_buf[2]>>4); //月  
+ 633   2         dis_time_buf[5]=(time_buf[2]&0x0f);
+ 634   2         
+ 635   2         dis_time_buf[6]=(time_buf[3]>>4); //日   
+ 636   2         dis_time_buf[7]=(time_buf[3]&0x0f);
+ 637   2         
+ 638   2         dis_time_buf[14]=(time_buf[7]&0x07); //星期
+ 639   2         
+ 640   2         //第2行显示  
+ 641   2         dis_time_buf[8]=(time_buf[4]>>4); //时   
+ 642   2         dis_time_buf[9]=(time_buf[4]&0x0f);   
+ 643   2      
+ 644   2         dis_time_buf[10]=(time_buf[5]>>4); //分   
+ 645   2         dis_time_buf[11]=(time_buf[5]&0x0f);   
+ 646   2      
+ 647   2         dis_time_buf[12]=(time_buf[6]>>4); //秒   
+ 648   2         dis_time_buf[13]=(time_buf[6]&0x0f);
+ 649   2        }
+ 650   1      }
+ 651          
+ 652          /***************************
+ 653          智能睡眠枕软件程序
+ 654          ***************************/
+ 655          
+ 656          //闹钟设置函数
+ 657          void setalarm() 
+ 658          {
+ 659   1        Display2();
+ 660   1        while(1)
+ 661   1        {
+ 662   2          scan();
+ 663   2          //闹钟时的设置界面
+ 664   2          if(n==1)
+ 665   2          {     
+ 666   3            Delay_xms(200);
+ 667   3            charlie:
+ 668   3            n=0;
+ 669   3            LCD_clear();
+ 670   3            break;
+ 671   3          }
+ 672   2          if(y==1)
+ 673   2          {
+ 674   3            y=0;
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 12  
+
+ 675   3            Delay_xms(200);
+ 676   3            time_hour_2+=1;//小时加1
+ 677   3            LCD_clear();
+ 678   3            Display2();
+ 679   3          }
+ 680   2          if(z==1)
+ 681   2          {
+ 682   3            z=0;
+ 683   3            Delay_xms(200);
+ 684   3            time_hour_2-=1;//小时减1
+ 685   3            LCD_clear();
+ 686   3            Display2();
+ 687   3          }
+ 688   2          if(x==1)
+ 689   2          {
+ 690   3            x=0;
+ 691   3            Delay_xms(200);
+ 692   3            //闹钟分的十位设置界面
+ 693   3            while(1)
+ 694   3            {
+ 695   4              scan();
+ 696   4              if(y==1)
+ 697   4              {
+ 698   5                y=0;
+ 699   5                Delay_xms(200);
+ 700   5                time_min_1+=1;//分的十位加1
+ 701   5                LCD_clear();
+ 702   5                Display2();
+ 703   5              }
+ 704   4              if(z==1)
+ 705   4              {
+ 706   5                z=0;
+ 707   5                Delay_xms(200);
+ 708   5                time_min_1-=1;//分的十位减1
+ 709   5                LCD_clear();
+ 710   5                Display2();
+ 711   5              }
+ 712   4              if(n==1)
+ 713   4              {
+ 714   5                n=0;
+ 715   5                LCD_clear();
+ 716   5                goto charlie;
+ 717   5              }
+ 718   4              if(x==1)
+ 719   4              {
+ 720   5                x=0;
+ 721   5                Delay_xms(200);
+ 722   5                //闹钟分的个位设置界面
+ 723   5                while(1)
+ 724   5                {
+ 725   6                  scan();
+ 726   6                  if(y==1)
+ 727   6                  {
+ 728   7                    y=0;
+ 729   7                    Delay_xms(200);
+ 730   7                    time_min_2+=1;//分的个位加1
+ 731   7                    LCD_clear();
+ 732   7                    Display2();
+ 733   7                  }
+ 734   6                  if(z==1)
+ 735   6                  {
+ 736   7                    z=0;
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 13  
+
+ 737   7                    Delay_xms(200);
+ 738   7                    time_min_2-=1;//分的个位减1
+ 739   7                    LCD_clear();
+ 740   7                    Display2();
+ 741   7                  }
+ 742   6                  if(n==1)
+ 743   6                  {
+ 744   7                    Delay_xms(200);
+ 745   7                    n=0;
+ 746   7                    LCD_clear();
+ 747   7                    goto charlie;
+ 748   7                  }
+ 749   6                  if(x==1)
+ 750   6                  {
+ 751   7                    Delay_xms(200);
+ 752   7                    x=0;
+ 753   7                    m=1;
+ 754   7                    LCD_clear();
+ 755   7                    Display3();
+ 756   7                    goto charlie;
+ 757   7                  }
+ 758   6                }
+ 759   5              }
+ 760   4            }
+ 761   3          }
+ 762   2        }
+ 763   1      }
+ 764          //睡眠模式
+ 765          void sleepmode()
+ 766          {
+ 767   1        m=0;
+ 768   1        LCD_clear();
+ 769   1        Display3();
+ 770   1        Delay_xms(200);
+ 771   1        while(1)
+ 772   1        {
+ 773   2          g=1;
+ 774   2          scan();
+ 775   2          fsr();
+ 776   2          if(n==1)
+ 777   2          {
+ 778   3            begin:
+ 779   3            n=0;
+ 780   3            LCD_clear();
+ 781   3            buzz=1;
+ 782   3            Delay_xms(200);
+ 783   3            g=0;
+ 784   3            break;
+ 785   3          }
+ 786   2          //到达闹钟设置时间，开始叫醒
+ 787   2          if(time_hour_1==dis_time_buf[8]&&time_hour_2==dis_time_buf[9]&&time_min_1==dis_time_buf[10]&&time_min_2=
+             -=dis_time_buf[11])
+ 788   2          {
+ 789   3            while(1)
+ 790   3            {
+ 791   4              scan();
+ 792   4              fsr();
+ 793   4              //检测到压力传感器有压力
+ 794   4              if(c!=num)
+ 795   4              {
+ 796   5                LCD_clear();
+ 797   5                Display4();
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 14  
+
+ 798   5                Delay_xms(200);
+ 799   5                buzzer();
+ 800   5              }
+ 801   4              //检测到压力传感器无压力
+ 802   4              if(c==num)
+ 803   4              {
+ 804   5                LCD_clear();
+ 805   5                g=0;
+ 806   5                goto begin;
+ 807   5              }
+ 808   4              if(n==1)
+ 809   4              {
+ 810   5                n=0;
+ 811   5                LCD_clear();
+ 812   5                buzz=1;
+ 813   5                Delay_xms(200);
+ 814   5                g=0;
+ 815   5                goto begin;
+ 816   5              }
+ 817   4            }
+ 818   3          }
+ 819   2        }
+ 820   1      }
+ 821          //蓝牙数据发送
+ 822          void bluetooth()
+ 823          {
+ 824   1        Display6();
+ 825   1        while(1)
+ 826   1        {
+ 827   2          scan();
+ 828   2          if(n==1)
+ 829   2          {
+ 830   3            n=0;
+ 831   3            LCD_clear();
+ 832   3            Delay_xms(200);
+ 833   3            break;
+ 834   3          }
+ 835   2          if(z==1)
+ 836   2          {
+ 837   3            z=0;
+ 838   3            for(h=0;h<60;h++)
+ 839   3            {
+ 840   4              sendDate(condition[h]+'0');
+ 841   4            }
+ 842   3            Delay_xms(200);
+ 843   3            Display7();
+ 844   3          }
+ 845   2        }
+ 846   1      }
+ 847          //睡眠状况查看
+ 848          void sleepcondition()
+ 849          {
+ 850   1        Display5();
+ 851   1        while(1)
+ 852   1        {
+ 853   2          scan();
+ 854   2          if(n==1)
+ 855   2          {
+ 856   3            n=0;
+ 857   3            LCD_clear();
+ 858   3            Delay_xms(200);
+ 859   3            break;
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 15  
+
+ 860   3          }
+ 861   2        }
+ 862   1      }
+ 863          
+ 864          //主函数
+ 865          void main(void)
+ 866          {
+ 867   1        Delay_xms(50);//等待系统稳定
+ 868   1        LCD_init();   //LCD初始化
+ 869   1        LCD_clear();  //清屏   
+ 870   1        ds1302_init();  //DS1302初始化
+ 871   1        Delay_xms(10); //延时
+ 872   1        Init_timer0(); //定时器0初始化
+ 873   1        Init_timer1(); //定时器1初始化
+ 874   1        Init_timer2(); //定时器2初始化 
+ 875   1        scanstart(); //按键初始化
+ 876   1        while(1)
+ 877   1        {
+ 878   2          Display1(); //初始界面
+ 879   2          scan(); //按键扫描
+ 880   2          if(m==1)
+ 881   2          {
+ 882   3           sleepmode(); //m=1时进入睡眠模式
+ 883   3          }
+ 884   2          if(x==1) //进入闹钟设置界面
+ 885   2          {
+ 886   3            x=0;
+ 887   3            Delay_xms(200);
+ 888   3            LCD_clear();
+ 889   3            setalarm();    
+ 890   3          }
+ 891   2          if(y==1) //进入睡眠记录界面
+ 892   2          {
+ 893   3            y=0;
+ 894   3            Delay_xms(200);
+ 895   3            LCD_clear();
+ 896   3            sleepcondition();  
+ 897   3          }
+ 898   2          if(z==1) //进入蓝牙发送界面
+ 899   2          {
+ 900   3            z=0;
+ 901   3            Delay_xms(200);
+ 902   3            LCD_clear();
+ 903   3            bluetooth();    
+ 904   3          }
+ 905   2          if(n==1) //进入睡眠模式
+ 906   2          {
+ 907   3            n=0;
+ 908   3            m=1; 
+ 909   3            Delay_xms(200);
+ 910   3            LCD_clear();
+ 911   3          } 
+ 912   2        }
+ 913   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   2967    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =    119       1
+C51 COMPILER V9.59.0.0   MAIN                                                              10/14/2019 15:46:37 PAGE 16  
+
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

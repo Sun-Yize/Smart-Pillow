@@ -1,0 +1,4 @@
+".\Objects\STARTUP.obj",
+".\Objects\main.obj" 
+TO ".\Objects\ÖÇÄÜË¯ÃßÕí" 
+PRINT(".\Listings\ÖÇÄÜË¯ÃßÕí.m51") RAMSIZE(256) 
